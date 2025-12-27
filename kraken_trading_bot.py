@@ -1,6 +1,7 @@
 """
 ═══════════════════════════════════════════════════════════════════════════
     KRAKEN MARGIN TRADING BOT - LARRY WILLIAMS SWING STRATEGY
+    VERSION 2.0 - FIXED PAIR NOMENCLATURE
 ═══════════════════════════════════════════════════════════════════════════
 
 ⚠️  ADVERTENCIA IMPORTANTE ⚠️
@@ -46,7 +47,9 @@ class BotConfig:
     KRAKEN_API_URL = 'https://api.kraken.com'
     
     # Par de trading en formato Kraken
-    TRADING_PAIR = 'XADAZUSD'  # Cardano/USD
+    # IMPORTANTE: Usar nomenclatura correcta de Kraken
+    # Ejemplos válidos: 'ADAUSD', 'SOLUSD', 'BTCUSD', 'ETHUSD'
+    TRADING_PAIR = os.getenv('TRADING_PAIR', 'ADAUSD')  # Cardano/USD
     
     # ──────────────────────────────────────────────────────────────────────
     # CONFIGURACIÓN DE TELEGRAM
@@ -59,10 +62,9 @@ class BotConfig:
     # ──────────────────────────────────────────────────────────────────────
     
     # Porcentaje del capital disponible a usar por operación (0.0 a 1.0)
-    # Ejemplo: 0.25 = usar el 25% del capital disponible
     POSITION_SIZE_PCT = float(os.getenv('POSITION_SIZE_PCT', '0.25'))
     
-    # Leverage a utilizar (2, 3, 5, etc.) - Kraken permite hasta 5x en la mayoría de pares
+    # Leverage a utilizar (2, 3, 5, etc.)
     LEVERAGE = int(os.getenv('LEVERAGE', '3'))
     
     # Nivel de swings a usar: 'intermediate' o 'longterm'
@@ -71,28 +73,75 @@ class BotConfig:
     # Número de velas históricas a analizar
     LOOKBACK_CANDLES = int(os.getenv('LOOKBACK_CANDLES', '500'))
     
-    # Intervalo de las velas en minutos (60 = 1 hora, 240 = 4 horas, 1440 = 1 día)
+    # Intervalo de las velas en minutos
     CANDLE_INTERVAL = int(os.getenv('CANDLE_INTERVAL', '60'))
     
     # ──────────────────────────────────────────────────────────────────────
     # GESTIÓN DE RIESGO
     # ──────────────────────────────────────────────────────────────────────
     
-    # Máximo drawdown permitido antes de detener el bot (en porcentaje)
     MAX_DRAWDOWN_PCT = float(os.getenv('MAX_DRAWDOWN_PCT', '20.0'))
-    
-    # Pérdida máxima por operación (en porcentaje del capital)
     MAX_LOSS_PER_TRADE_PCT = float(os.getenv('MAX_LOSS_PER_TRADE_PCT', '5.0'))
-    
-    # Mínimo balance requerido para operar (en USD)
     MIN_BALANCE_USD = float(os.getenv('MIN_BALANCE_USD', '100.0'))
     
     # ──────────────────────────────────────────────────────────────────────
     # MODO DEBUG
     # ──────────────────────────────────────────────────────────────────────
     
-    # Si está en True, no ejecuta órdenes reales, solo simula
     DRY_RUN = os.getenv('DRY_RUN', 'False').lower() == 'true'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#                        MAPEO DE PARES DE KRAKEN
+# ═══════════════════════════════════════════════════════════════════════════
+
+class KrakenPairMapper:
+    """
+    Maneja el mapeo entre diferentes formatos de pares en Kraken.
+    Kraken a veces devuelve pares en diferentes formatos dependiendo del endpoint.
+    """
+    
+    # Mapeo de pares simplificados a posibles respuestas de Kraken
+    PAIR_MAPPINGS = {
+        'ADAUSD': ['ADAUSD', 'ADA/USD'],
+        'SOLUSD': ['SOLUSD', 'SOL/USD'],
+        'BTCUSD': ['BTCUSD', 'XBT/USD', 'XXBTZUSD'],
+        'ETHUSD': ['ETHUSD', 'ETH/USD', 'XETHZUSD'],
+        'DOTUSD': ['DOTUSD', 'DOT/USD'],
+        'MATICUSD': ['MATICUSD', 'MATIC/USD'],
+        'LINKUSD': ['LINKUSD', 'LINK/USD'],
+    }
+    
+    @classmethod
+    def find_pair_in_result(cls, pair: str, result: dict) -> Optional[str]:
+        """
+        Busca el par en el resultado de la API, probando diferentes formatos.
+        
+        Args:
+            pair: Par solicitado (ej: 'ADAUSD')
+            result: Resultado de la API de Kraken
+        
+        Returns:
+            La clave correcta encontrada en el resultado, o None
+        """
+        # Primero intentar el par tal cual
+        if pair in result:
+            return pair
+        
+        # Buscar en los posibles formatos
+        possible_formats = cls.PAIR_MAPPINGS.get(pair, [pair])
+        for format_pair in possible_formats:
+            if format_pair in result:
+                return format_pair
+        
+        # Si no se encuentra, buscar cualquier clave similar
+        pair_lower = pair.lower().replace('/', '')
+        for key in result.keys():
+            key_lower = key.lower().replace('/', '')
+            if key_lower == pair_lower:
+                return key
+        
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -110,16 +159,10 @@ class KrakenClient:
         self.api_secret = api_secret
         self.api_url = api_url
         self.session = requests.Session()
+        self.pair_mapper = KrakenPairMapper()
         
     def _get_kraken_signature(self, urlpath: str, data: Dict) -> str:
-        """
-        Genera la firma criptográfica requerida por Kraken para autenticar requests.
-        
-        Kraken requiere una firma HMAC-SHA512 que incluye:
-        - El nonce (timestamp único)
-        - Los datos del request
-        - La ruta del endpoint
-        """
+        """Genera la firma criptográfica requerida por Kraken."""
         postdata = urllib.parse.urlencode(data)
         encoded = (str(data['nonce']) + postdata).encode()
         message = urlpath.encode() + hashlib.sha256(encoded).digest()
@@ -135,11 +178,6 @@ class KrakenClient:
     def _request(self, endpoint: str, data: Dict = None, private: bool = False) -> Dict:
         """
         Realiza una solicitud a la API de Kraken.
-        
-        Args:
-            endpoint: Ruta del endpoint (ej: '/0/private/Balance')
-            data: Datos a enviar en el request
-            private: Si True, usa autenticación (para endpoints privados)
         """
         url = self.api_url + endpoint
         
@@ -155,29 +193,36 @@ class KrakenClient:
                 'API-Sign': self._get_kraken_signature(endpoint, data)
             }
             
-            response = self.session.post(url, data=data, headers=headers)
+            response = self.session.post(url, data=data, headers=headers, timeout=30)
         else:
-            response = self.session.get(url, params=data)
+            response = self.session.get(url, params=data, timeout=30)
         
         response.raise_for_status()
         result = response.json()
         
         if result.get('error'):
-            raise Exception(f"Error de Kraken API: {result['error']}")
+            error_msgs = result['error']
+            raise Exception(f"Error de Kraken API: {error_msgs}")
         
         return result.get('result', {})
+    
+    def verify_pair(self, pair: str) -> bool:
+        """
+        Verifica que un par de trading es válido en Kraken.
+        
+        Returns:
+            True si el par es válido, False si no
+        """
+        try:
+            result = self._request('/0/public/AssetPairs', data={'pair': pair})
+            return len(result) > 0
+        except Exception as e:
+            print(f"⚠️  Error verificando par {pair}: {e}")
+            return False
     
     def get_ohlc_data(self, pair: str, interval: int = 60, since: int = None) -> pd.DataFrame:
         """
         Obtiene datos OHLC (velas) de Kraken.
-        
-        Args:
-            pair: Par de trading (ej: 'XADAZUSD')
-            interval: Intervalo en minutos (1, 5, 15, 30, 60, 240, 1440, etc.)
-            since: Timestamp desde el cual obtener datos
-        
-        Returns:
-            DataFrame con columnas: timestamp, open, high, low, close, volume
         """
         data = {'pair': pair, 'interval': interval}
         if since:
@@ -185,14 +230,21 @@ class KrakenClient:
         
         result = self._request('/0/public/OHLC', data=data)
         
-        # Kraken devuelve datos en un formato específico
-        ohlc_data = result[pair]
+        # Buscar la clave correcta en el resultado
+        pair_key = self.pair_mapper.find_pair_in_result(pair, result)
+        
+        if not pair_key:
+            available_keys = list(result.keys())
+            raise Exception(f"No se encontró el par {pair} en la respuesta. "
+                          f"Claves disponibles: {available_keys}")
+        
+        ohlc_data = result[pair_key]
         
         df = pd.DataFrame(ohlc_data, columns=[
             'timestamp', 'open', 'high', 'low', 'close', 'vwap', 'volume', 'count'
         ])
         
-        # Convertir a tipos numéricos apropiados
+        # Convertir a tipos numéricos
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
@@ -204,35 +256,25 @@ class KrakenClient:
         return df
     
     def get_account_balance(self) -> Dict[str, float]:
-        """
-        Obtiene el balance de la cuenta.
-        
-        Returns:
-            Diccionario con los balances de cada asset
-        """
+        """Obtiene el balance de la cuenta."""
         result = self._request('/0/private/Balance', private=True)
         return {k: float(v) for k, v in result.items()}
     
     def get_open_positions(self) -> Dict:
-        """
-        Obtiene las posiciones abiertas actuales.
-        """
-        result = self._request('/0/private/OpenPositions', private=True)
-        return result
+        """Obtiene las posiciones abiertas actuales."""
+        try:
+            result = self._request('/0/private/OpenPositions', private=True)
+            return result
+        except Exception as e:
+            # Si no hay posiciones abiertas, Kraken puede devolver error
+            if "No open positions" in str(e):
+                return {}
+            raise
     
     def place_market_order(self, pair: str, order_type: str, volume: float, 
                           leverage: int = None) -> Dict:
         """
         Coloca una orden de mercado.
-        
-        Args:
-            pair: Par de trading
-            order_type: 'buy' o 'sell'
-            volume: Cantidad a comprar/vender
-            leverage: Leverage a usar (opcional)
-        
-        Returns:
-            Información de la orden colocada
         """
         data = {
             'pair': pair,
@@ -241,16 +283,14 @@ class KrakenClient:
             'volume': str(volume)
         }
         
-        if leverage:
+        if leverage and leverage > 1:
             data['leverage'] = str(leverage)
         
         result = self._request('/0/private/AddOrder', data=data, private=True)
         return result
     
     def close_position(self, position_id: str) -> Dict:
-        """
-        Cierra una posición específica.
-        """
+        """Cierra una posición específica."""
         data = {'txid': position_id}
         result = self._request('/0/private/ClosePosition', data=data, private=True)
         return result
@@ -261,9 +301,7 @@ class KrakenClient:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TelegramNotifier:
-    """
-    Envía notificaciones a Telegram sobre las operaciones del bot.
-    """
+    """Envía notificaciones a Telegram sobre las operaciones del bot."""
     
     def __init__(self, bot_token: str, chat_id: str):
         self.bot_token = bot_token
@@ -271,13 +309,7 @@ class TelegramNotifier:
         self.api_url = f"https://api.telegram.org/bot{bot_token}"
     
     def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
-        """
-        Envía un mensaje a Telegram.
-        
-        Args:
-            message: Texto del mensaje (puede incluir HTML)
-            parse_mode: Formato del mensaje ('HTML' o 'Markdown')
-        """
+        """Envía un mensaje a Telegram."""
         if not self.bot_token or not self.chat_id:
             print(f"⚠️  Telegram no configurado. Mensaje: {message}")
             return False
@@ -290,7 +322,7 @@ class TelegramNotifier:
                 'parse_mode': parse_mode
             }
             
-            response = requests.post(url, data=data)
+            response = requests.post(url, data=data, timeout=10)
             response.raise_for_status()
             return True
             
@@ -299,9 +331,7 @@ class TelegramNotifier:
             return False
     
     def send_trade_notification(self, trade_info: Dict):
-        """
-        Envía una notificación formateada sobre una operación.
-        """
+        """Envía una notificación formateada sobre una operación."""
         emoji = "🟢" if trade_info['type'] == 'BUY' else "🔴"
         
         message = f"""
@@ -324,9 +354,7 @@ class TelegramNotifier:
         self.send_message(message)
     
     def send_alert(self, alert_type: str, message: str):
-        """
-        Envía una alerta importante.
-        """
+        """Envía una alerta importante."""
         emojis = {
             'error': '❌',
             'warning': '⚠️',
@@ -346,7 +374,6 @@ class TelegramNotifier:
 class SwingDetector:
     """
     Implementa la lógica de detección de swing points de Larry Williams.
-    Identifica puntos de giro en tres niveles: short-term, intermediate, long-term.
     """
     
     def __init__(self, data: pd.DataFrame):
@@ -359,9 +386,7 @@ class SwingDetector:
         self.long_term_lows = pd.Series(index=data.index, dtype=float)
     
     def detect_short_term_swings(self):
-        """
-        Detecta swing points de corto plazo usando la regla de 3 barras.
-        """
+        """Detecta swing points de corto plazo usando la regla de 3 barras."""
         highs = self.data['High'].values
         lows = self.data['Low'].values
         
@@ -376,9 +401,7 @@ class SwingDetector:
         return self.short_term_highs, self.short_term_lows
     
     def detect_intermediate_swings(self):
-        """
-        Construye intermediate swings a partir de short-term swings.
-        """
+        """Construye intermediate swings a partir de short-term swings."""
         if self.short_term_highs.isna().all():
             self.detect_short_term_swings()
         
@@ -413,9 +436,7 @@ class SwingDetector:
         return self.intermediate_highs, self.intermediate_lows
     
     def detect_long_term_swings(self):
-        """
-        Construye long-term swings a partir de intermediate swings.
-        """
+        """Construye long-term swings a partir de intermediate swings."""
         if self.intermediate_highs.isna().all():
             self.detect_intermediate_swings()
         
@@ -453,13 +474,10 @@ class SwingDetector:
         """
         Obtiene la última señal de trading basada en los swing points.
         
-        Args:
-            level: Nivel de swings a usar ('intermediate' o 'longterm')
-        
         Returns:
             Tupla (tipo_señal, precio) donde tipo_señal es 'BUY', 'SELL' o None
         """
-        self.detect_long_term_swings()  # Esto también detecta todos los niveles anteriores
+        self.detect_long_term_swings()
         
         if level == 'longterm':
             highs = self.long_term_highs
@@ -468,20 +486,17 @@ class SwingDetector:
             highs = self.intermediate_highs
             lows = self.intermediate_lows
         
-        # Obtener el último swing point (high o low)
         last_high_idx = highs.last_valid_index()
         last_low_idx = lows.last_valid_index()
         
         if last_high_idx is None and last_low_idx is None:
             return None, None
         
-        # Determinar cuál ocurrió más recientemente
         if last_low_idx is None:
             return 'SELL', highs[last_high_idx]
         elif last_high_idx is None:
             return 'BUY', lows[last_low_idx]
         else:
-            # El más reciente determina la señal
             if last_low_idx > last_high_idx:
                 return 'BUY', lows[last_low_idx]
             else:
@@ -493,14 +508,11 @@ class SwingDetector:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class SwingTradingBot:
-    """
-    Bot principal que coordina todas las operaciones de trading.
-    """
+    """Bot principal que coordina todas las operaciones de trading."""
     
     def __init__(self, config: BotConfig):
         self.config = config
         
-        # Inicializar componentes
         self.kraken = KrakenClient(
             config.KRAKEN_API_KEY,
             config.KRAKEN_API_SECRET,
@@ -512,8 +524,7 @@ class SwingTradingBot:
             config.TELEGRAM_CHAT_ID
         )
         
-        # Estado del bot
-        self.current_position = None  # 'LONG', 'SHORT', o None
+        self.current_position = None
         self.position_entry_price = None
         self.initial_balance = None
         self.peak_balance = None
@@ -521,17 +532,10 @@ class SwingTradingBot:
         print("✓ Bot inicializado correctamente")
     
     def check_safety_conditions(self, balance_usd: float) -> Tuple[bool, str]:
-        """
-        Verifica las condiciones de seguridad antes de operar.
-        
-        Returns:
-            Tupla (es_seguro, mensaje_razón)
-        """
-        # Verificar balance mínimo
+        """Verifica las condiciones de seguridad antes de operar."""
         if balance_usd < self.config.MIN_BALANCE_USD:
             return False, f"Balance insuficiente: ${balance_usd:.2f} < ${self.config.MIN_BALANCE_USD}"
         
-        # Verificar drawdown máximo
         if self.initial_balance and self.peak_balance:
             current_drawdown = ((self.peak_balance - balance_usd) / self.peak_balance) * 100
             if current_drawdown > self.config.MAX_DRAWDOWN_PCT:
@@ -540,55 +544,30 @@ class SwingTradingBot:
         return True, "Condiciones de seguridad OK"
     
     def calculate_position_size(self, balance_usd: float, current_price: float) -> float:
-        """
-        Calcula el tamaño de la posición basado en el balance y configuración.
-        
-        Returns:
-            Cantidad de ADA a comprar/vender
-        """
-        # Capital a usar en esta operación
+        """Calcula el tamaño de la posición."""
         capital_to_use = balance_usd * self.config.POSITION_SIZE_PCT
-        
-        # Con leverage, podemos controlar más capital
         effective_capital = capital_to_use * self.config.LEVERAGE
-        
-        # Calcular cantidad de ADA
         volume = effective_capital / current_price
-        
-        # Redondear a 2 decimales (Kraken requiere cierta precisión)
-        volume = round(volume, 2)
-        
-        return volume
+        return round(volume, 2)
     
     def execute_trade(self, signal: str, current_price: float, reason: str):
-        """
-        Ejecuta una operación de trading.
-        
-        Args:
-            signal: 'BUY' o 'SELL'
-            current_price: Precio actual del mercado
-            reason: Razón de la operación (para logging)
-        """
+        """Ejecuta una operación de trading."""
         try:
-            # Obtener balance actual
             balances = self.kraken.get_account_balance()
             balance_usd = balances.get('ZUSD', 0)
             
-            # Verificar condiciones de seguridad
             is_safe, safety_msg = self.check_safety_conditions(balance_usd)
             if not is_safe:
                 self.telegram.send_alert('warning', f"Operación cancelada: {safety_msg}")
                 print(f"⚠️  {safety_msg}")
                 return
             
-            # Calcular tamaño de posición
             volume = self.calculate_position_size(balance_usd, current_price)
             
             if volume <= 0:
                 print("⚠️  Volumen calculado es 0, no se ejecuta operación")
                 return
             
-            # Información de la operación
             trade_info = {
                 'pair': self.config.TRADING_PAIR,
                 'type': signal,
@@ -600,7 +579,6 @@ class SwingTradingBot:
                 'dry_run': self.config.DRY_RUN
             }
             
-            # Ejecutar operación (o simular si DRY_RUN)
             if not self.config.DRY_RUN:
                 order_type = 'buy' if signal == 'BUY' else 'sell'
                 result = self.kraken.place_market_order(
@@ -613,20 +591,17 @@ class SwingTradingBot:
                 print(f"✓ Orden ejecutada: {result}")
                 trade_info['order_id'] = result.get('txid', [''])[0]
             else:
-                print(f"🧪 [SIMULACIÓN] Orden {signal}: {volume} ADA @ ${current_price}")
+                print(f"🧪 [SIMULACIÓN] Orden {signal}: {volume} @ ${current_price}")
             
-            # Actualizar estado del bot
             self.current_position = 'LONG' if signal == 'BUY' else 'SHORT'
             self.position_entry_price = current_price
             
-            # Actualizar métricas de balance
             if self.initial_balance is None:
                 self.initial_balance = balance_usd
                 self.peak_balance = balance_usd
             elif balance_usd > self.peak_balance:
                 self.peak_balance = balance_usd
             
-            # Notificar
             self.telegram.send_trade_notification(trade_info)
             
         except Exception as e:
@@ -635,9 +610,7 @@ class SwingTradingBot:
             self.telegram.send_alert('error', error_msg)
     
     def run(self):
-        """
-        Ejecuta un ciclo completo del bot.
-        """
+        """Ejecuta un ciclo completo del bot."""
         print("\n" + "="*70)
         print("INICIANDO CICLO DE TRADING")
         print("="*70)
@@ -649,18 +622,24 @@ class SwingTradingBot:
         print("="*70)
         
         try:
-            # 1. Descargar datos históricos
+            # Verificar que el par es válido
+            print(f"\n🔍 Verificando par {self.config.TRADING_PAIR}...")
+            if not self.kraken.verify_pair(self.config.TRADING_PAIR):
+                raise Exception(f"Par {self.config.TRADING_PAIR} no válido en Kraken. "
+                              f"Usa formato como: ADAUSD, SOLUSD, BTCUSD, ETHUSD")
+            print(f"✓ Par {self.config.TRADING_PAIR} verificado")
+            
+            # Descargar datos históricos
             print("\n📊 Descargando datos históricos...")
             ohlc_data = self.kraken.get_ohlc_data(
                 pair=self.config.TRADING_PAIR,
                 interval=self.config.CANDLE_INTERVAL
             )
             
-            # Tomar solo las últimas N velas
             ohlc_data = ohlc_data.tail(self.config.LOOKBACK_CANDLES)
             print(f"✓ Descargadas {len(ohlc_data)} velas")
             
-            # 2. Detectar swing points
+            # Detectar swing points
             print("\n🔍 Detectando swing points...")
             detector = SwingDetector(ohlc_data)
             signal, signal_price = detector.get_latest_signal(level=self.config.SWING_LEVEL)
@@ -671,33 +650,27 @@ class SwingTradingBot:
             
             print(f"✓ Señal detectada: {signal} @ ${signal_price:.4f}")
             
-            # 3. Obtener precio actual
+            # Obtener precio actual
             current_price = ohlc_data['Close'].iloc[-1]
             print(f"💰 Precio actual: ${current_price:.4f}")
             
-            # 4. Verificar si necesitamos cambiar de posición
+            # Verificar si necesitamos cambiar de posición
             needs_trade = False
             reason = ""
             
             if self.current_position is None:
-                # No tenemos posición, abrir una nueva
                 needs_trade = True
                 reason = f"Nuevo {signal} signal detectado en nivel {self.config.SWING_LEVEL}"
-            
             elif self.current_position == 'LONG' and signal == 'SELL':
-                # Cerrar long y abrir short
                 needs_trade = True
                 reason = f"Cambio de estructura: SELL signal detectado (cerrando LONG)"
-            
             elif self.current_position == 'SHORT' and signal == 'BUY':
-                # Cerrar short y abrir long
                 needs_trade = True
                 reason = f"Cambio de estructura: BUY signal detectado (cerrando SHORT)"
-            
             else:
                 print(f"ℹ️  Posición actual ({self.current_position}) alineada con señal ({signal})")
             
-            # 5. Ejecutar operación si es necesario
+            # Ejecutar operación si es necesario
             if needs_trade:
                 print(f"\n📈 Ejecutando operación: {signal}")
                 self.execute_trade(signal, current_price, reason)
@@ -716,18 +689,16 @@ class SwingTradingBot:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
-    """
-    Función principal que inicia el bot.
-    """
+    """Función principal que inicia el bot."""
     print("""
     ╔═══════════════════════════════════════════════════════════════════════╗
     ║                                                                       ║
     ║         KRAKEN MARGIN TRADING BOT - LARRY WILLIAMS STRATEGY          ║
+    ║                         VERSION 2.0 - FIXED                          ║
     ║                                                                       ║
     ╚═══════════════════════════════════════════════════════════════════════╝
     """)
     
-    # Validar configuración
     config = BotConfig()
     
     if not config.KRAKEN_API_KEY or not config.KRAKEN_API_SECRET:
@@ -738,7 +709,6 @@ def main():
     if config.DRY_RUN:
         print("\n⚠️  MODO SIMULACIÓN ACTIVADO - No se ejecutarán órdenes reales\n")
     
-    # Crear y ejecutar bot
     bot = SwingTradingBot(config)
     bot.run()
     
