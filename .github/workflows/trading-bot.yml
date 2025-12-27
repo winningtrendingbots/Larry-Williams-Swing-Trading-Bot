@@ -9,7 +9,7 @@ name: Kraken Swing Trading Bot
 on:
   # Ejecutar automáticamente cada hora
   schedule:
-    - cron: '*/15 * * * *'  # Cada hora en punto (00:00, 01:00, 02:00, etc.)
+    - cron: '*/15 * * * *'  # Cada hora en punto si hubiese un 0 en vez del */15 (00:00, 01:00, 02:00, etc.)
   
   # También permitir ejecución manual desde GitHub
   workflow_dispatch:
