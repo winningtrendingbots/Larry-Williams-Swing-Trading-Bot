@@ -62,16 +62,16 @@ class BotConfig:
     # ──────────────────────────────────────────────────────────────────────
     
     # Porcentaje del capital disponible a usar por operación (0.0 a 1.0)
-    POSITION_SIZE_PCT = float(os.getenv('POSITION_SIZE_PCT', '0.25'))
+    POSITION_SIZE_PCT = float(os.getenv('POSITION_SIZE_PCT', '0.10'))
     
     # Leverage a utilizar (2, 3, 5, etc.)
-    LEVERAGE = int(os.getenv('LEVERAGE', '3'))
+    LEVERAGE = int(os.getenv('LEVERAGE', '4'))
     
     # Nivel de swings a usar: 'intermediate' o 'longterm'
     SWING_LEVEL = os.getenv('SWING_LEVEL', 'intermediate')
     
     # Número de velas históricas a analizar
-    LOOKBACK_CANDLES = int(os.getenv('LOOKBACK_CANDLES', '500'))
+    LOOKBACK_CANDLES = int(os.getenv('LOOKBACK_CANDLES', '200'))
     
     # Intervalo de las velas en minutos
     CANDLE_INTERVAL = int(os.getenv('CANDLE_INTERVAL', '60'))
