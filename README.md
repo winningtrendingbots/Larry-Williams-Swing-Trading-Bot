@@ -1,4 +1,3 @@
-
 # ═══════════════════════════════════════════════════════════════════════════
 # ARCHIVO 4: README.md - INSTRUCCIONES COMPLETAS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -88,7 +87,7 @@ En tu repositorio de GitHub:
 | `CANDLE_INTERVAL` | Intervalo de velas en minutos | `60` | 1, 5, 15, 60, 240, 1440 |
 | `MAX_DRAWDOWN_PCT` | Drawdown máximo permitido | `20.0` | 0.0 - 100.0 |
 | `MAX_LOSS_PER_TRADE_PCT` | Pérdida máxima por operación | `5.0` | 0.0 - 100.0 |
-| `MIN_BALANCE_USD` | Balance mínimo requerido | `10.0` | > 0 |
+| `MIN_BALANCE_USD` | Balance mínimo requerido | `100.0` | > 0 |
 
 ### Paso 4: Configurar el Repositorio
 
