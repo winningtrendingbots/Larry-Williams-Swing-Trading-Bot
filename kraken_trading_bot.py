@@ -82,13 +82,13 @@ class BotConfig:
     
     MAX_DRAWDOWN_PCT = float(os.getenv('MAX_DRAWDOWN_PCT', '20.0'))
     MAX_LOSS_PER_TRADE_PCT = float(os.getenv('MAX_LOSS_PER_TRADE_PCT', '5.0'))
-    MIN_BALANCE_USD = float(os.getenv('MIN_BALANCE_USD', '100.0'))
+    MIN_BALANCE_USD = float(os.getenv('MIN_BALANCE_USD', '10.0'))
     
     # ──────────────────────────────────────────────────────────────────────
     # MODO DEBUG
     # ──────────────────────────────────────────────────────────────────────
     
-    DRY_RUN = os.getenv('DRY_RUN', 'False').lower() == 'true'
+    DRY_RUN = os.getenv('DRY_RUN', 'False').lower() == 'false'
 
 
 # ═══════════════════════════════════════════════════════════════════════════
