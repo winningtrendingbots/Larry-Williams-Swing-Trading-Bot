@@ -1,77 +1,61 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# ARCHIVO 1: .github/workflows/trading-bot.yml
-# ═══════════════════════════════════════════════════════════════════════════
-# Este archivo debe estar en: .github/workflows/trading-bot.yml
+name: Kraken Trading Bot
 
-name: Kraken Swing Trading Bot
-
-# Configurar cuándo se ejecuta el bot
 on:
-  # Ejecutar automáticamente cada hora
+  # Cada 15 minutos para monitorear posiciones
   schedule:
-    - cron: '*/15 * * * *'  # Cada hora en punto si hubiese un 0 en vez del */15 (00:00, 01:00, 02:00, etc.)
+    - cron: '*/15 * * * *'
   
-  # También permitir ejecución manual desde GitHub
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Ejecutar en modo simulación (true/false)'
+        description: 'Simulación (true) o Real (false)'
         required: false
-        default: 'true'
+        default: 'false'
 
 jobs:
   trade:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     
     steps:
-    - name: 📥 Checkout código
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: 🐍 Configurar Python
-      uses: actions/setup-python@v4
+    - uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        cache: 'pip'
     
-    - name: 📦 Instalar dependencias
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests pandas numpy
+    - name: Instalar
+      run: pip install requests pandas numpy
     
-    - name: 🚀 Ejecutar bot de trading
+    - name: Ejecutar bot
       env:
-        # Credenciales de Kraken (configurar en GitHub Secrets)
+        # Credenciales (configurar en Settings > Secrets)
         KRAKEN_API_KEY: ${{ secrets.KRAKEN_API_KEY }}
         KRAKEN_API_SECRET: ${{ secrets.KRAKEN_API_SECRET }}
-        
-        # Credenciales de Telegram (configurar en GitHub Secrets)
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         
-        # Configuración de trading
-        POSITION_SIZE_PCT: ${{ secrets.POSITION_SIZE_PCT || '0.25' }}
-        LEVERAGE: ${{ secrets.LEVERAGE || '3' }}
-        SWING_LEVEL: ${{ secrets.SWING_LEVEL || 'intermediate' }}
-        LOOKBACK_CANDLES: ${{ secrets.LOOKBACK_CANDLES || '500' }}
-        CANDLE_INTERVAL: ${{ secrets.CANDLE_INTERVAL || '60' }}
+        # Configuración optimizada 40€
+        TRADING_PAIR: 'ADAEUR'
+        POSITION_SIZE_PCT: '0.30'  # 30% = 12€
+        LEVERAGE: '3'  # 12€ x3 = 36€ efectivo
+        MIN_BALANCE: '10.0'
         
-        # Gestión de riesgo
-        MAX_DRAWDOWN_PCT: ${{ secrets.MAX_DRAWDOWN_PCT || '20.0' }}
-        MAX_LOSS_PER_TRADE_PCT: ${{ secrets.MAX_LOSS_PER_TRADE_PCT || '5.0' }}
-        MIN_BALANCE_USD: ${{ secrets.MIN_BALANCE_USD || '100.0' }}
+        # Velas 1 hora
+        CANDLE_INTERVAL: '60'
+        LOOKBACK_CANDLES: '200'
+        SWING_LEVEL: 'intermediate'
         
-        # Modo de ejecución
+        # Stop Loss / Take Profit
+        USE_STOP_LOSS: 'true'
+        STOP_LOSS_PCT: '4.0'
+        USE_TAKE_PROFIT: 'true'
+        TAKE_PROFIT_PCT: '8.0'
+        USE_TRAILING_STOP: 'true'
+        TRAILING_STOP_PCT: '2.5'
+        MIN_PROFIT_FOR_TRAILING: '3.0'
+        
+        # IMPORTANTE: false = trading REAL
         DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
       
-      run: |
-        python kraken_trading_bot.py
-    
-    - name: 📊 Subir logs (si hay error)
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: trading-logs
-        path: |
-          *.log
-          *.txt
-        retention-days: 7
+      run: python kraken_trading_bot.py
