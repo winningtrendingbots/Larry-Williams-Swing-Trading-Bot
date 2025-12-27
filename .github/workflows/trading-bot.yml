@@ -1,0 +1,424 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ARCHIVO 1: .github/workflows/trading-bot.yml
+# ═══════════════════════════════════════════════════════════════════════════
+# Este archivo debe estar en: .github/workflows/trading-bot.yml
+
+name: Kraken Swing Trading Bot
+
+# Configurar cuándo se ejecuta el bot
+on:
+  # Ejecutar automáticamente cada hora
+  schedule:
+    - cron: '0 * * * *'  # Cada hora en punto (00:00, 01:00, 02:00, etc.)
+  
+  # También permitir ejecución manual desde GitHub
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Ejecutar en modo simulación (true/false)'
+        required: false
+        default: 'true'
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout código
+      uses: actions/checkout@v3
+    
+    - name: 🐍 Configurar Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+    
+    - name: 📦 Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas numpy
+    
+    - name: 🚀 Ejecutar bot de trading
+      env:
+        # Credenciales de Kraken (configurar en GitHub Secrets)
+        KRAKEN_API_KEY: ${{ secrets.KRAKEN_API_KEY }}
+        KRAKEN_API_SECRET: ${{ secrets.KRAKEN_API_SECRET }}
+        
+        # Credenciales de Telegram (configurar en GitHub Secrets)
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        
+        # Configuración de trading
+        POSITION_SIZE_PCT: ${{ secrets.POSITION_SIZE_PCT || '0.25' }}
+        LEVERAGE: ${{ secrets.LEVERAGE || '3' }}
+        SWING_LEVEL: ${{ secrets.SWING_LEVEL || 'intermediate' }}
+        LOOKBACK_CANDLES: ${{ secrets.LOOKBACK_CANDLES || '500' }}
+        CANDLE_INTERVAL: ${{ secrets.CANDLE_INTERVAL || '60' }}
+        
+        # Gestión de riesgo
+        MAX_DRAWDOWN_PCT: ${{ secrets.MAX_DRAWDOWN_PCT || '20.0' }}
+        MAX_LOSS_PER_TRADE_PCT: ${{ secrets.MAX_LOSS_PER_TRADE_PCT || '5.0' }}
+        MIN_BALANCE_USD: ${{ secrets.MIN_BALANCE_USD || '100.0' }}
+        
+        # Modo de ejecución
+        DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      
+      run: |
+        python kraken_trading_bot.py
+    
+    - name: 📊 Subir logs (si hay error)
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: trading-logs
+        path: |
+          *.log
+          *.txt
+        retention-days: 7
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ARCHIVO 2: requirements.txt
+# ═══════════════════════════════════════════════════════════════════════════
+# Este archivo debe estar en la raíz del repositorio
+
+# requirements.txt
+requests>=2.28.0
+pandas>=1.5.0
+numpy>=1.23.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ARCHIVO 3: .gitignore
+# ═══════════════════════════════════════════════════════════════════════════
+# Este archivo debe estar en la raíz del repositorio
+
+# .gitignore
+*.pyc
+__pycache__/
+.env
+*.log
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ARCHIVO 4: README.md - INSTRUCCIONES COMPLETAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# README.md
+
+# 🤖 Kraken Swing Trading Bot - Larry Williams Strategy
+
+Bot de trading automatizado que implementa la estrategia de swing structure de Larry Williams para operar en Kraken con margen.
+
+## ⚠️ ADVERTENCIAS IMPORTANTES
+
+- **Este bot opera con dinero real en Kraken**
+- El trading con margen amplifica tanto ganancias como pérdidas
+- Nunca inviertas más de lo que puedas permitirte perder
+- Siempre comienza con modo simulación (`DRY_RUN=true`)
+- Los resultados pasados no garantizan rendimientos futuros
+- Asegúrate de entender completamente la estrategia antes de usar el bot
+
+## 📋 Requisitos Previos
+
+### 1. Cuenta de Kraken
+- Cuenta verificada en Kraken
+- Trading en margen habilitado
+- API keys generadas con permisos de:
+  - ✅ Query Funds
+  - ✅ Query Open Orders & Trades
+  - ✅ Query Closed Orders & Trades
+  - ✅ Create & Modify Orders
+  - ✅ Cancel/Close Orders
+
+### 2. Bot de Telegram
+- Crear un bot con [@BotFather](https://t.me/botfather)
+- Obtener el token del bot
+- Obtener tu Chat ID (puedes usar [@userinfobot](https://t.me/userinfobot))
+
+### 3. Repositorio de GitHub
+- Fork o clone de este repositorio
+- Actions habilitado en el repositorio
+
+## 🔧 Configuración Paso a Paso
+
+### Paso 1: Obtener API Keys de Kraken
+
+1. Inicia sesión en Kraken
+2. Ve a **Settings → API**
+3. Clic en **Generate New Key**
+4. Configura los permisos necesarios:
+   - Query Funds ✅
+   - Query Open Orders & Trades ✅
+   - Create & Modify Orders ✅
+5. **IMPORTANTE**: Guarda la API Key y Secret inmediatamente (solo se muestra una vez)
+
+### Paso 2: Crear Bot de Telegram
+
+1. Abre Telegram y busca [@BotFather](https://t.me/botfather)
+2. Envía el comando `/newbot`
+3. Sigue las instrucciones para nombrar tu bot
+4. Guarda el **Token** que te proporciona
+5. Busca [@userinfobot](https://t.me/userinfobot) para obtener tu **Chat ID**
+
+### Paso 3: Configurar GitHub Secrets
+
+En tu repositorio de GitHub:
+
+1. Ve a **Settings → Secrets and variables → Actions**
+2. Clic en **New repository secret**
+3. Agrega los siguientes secrets:
+
+#### Secrets OBLIGATORIOS:
+
+| Nombre | Descripción | Ejemplo |
+|--------|-------------|---------|
+| `KRAKEN_API_KEY` | Tu API Key de Kraken | `abc123def456...` |
+| `KRAKEN_API_SECRET` | Tu API Secret de Kraken | `xyz789uvw012...` |
+| `TELEGRAM_BOT_TOKEN` | Token de tu bot de Telegram | `1234567890:ABCdefGHI...` |
+| `TELEGRAM_CHAT_ID` | Tu Chat ID de Telegram | `123456789` |
+
+#### Secrets OPCIONALES (con valores por defecto):
+
+| Nombre | Descripción | Default | Rango |
+|--------|-------------|---------|-------|
+| `POSITION_SIZE_PCT` | % del capital a usar por operación | `0.25` | 0.0 - 1.0 |
+| `LEVERAGE` | Multiplicador de apalancamiento | `3` | 1 - 5 |
+| `SWING_LEVEL` | Nivel de swings (`intermediate` o `longterm`) | `intermediate` | - |
+| `LOOKBACK_CANDLES` | Número de velas históricas a analizar | `500` | 100+ |
+| `CANDLE_INTERVAL` | Intervalo de velas en minutos | `60` | 1, 5, 15, 60, 240, 1440 |
+| `MAX_DRAWDOWN_PCT` | Drawdown máximo permitido | `20.0` | 0.0 - 100.0 |
+| `MAX_LOSS_PER_TRADE_PCT` | Pérdida máxima por operación | `5.0` | 0.0 - 100.0 |
+| `MIN_BALANCE_USD` | Balance mínimo requerido | `10.0` | > 0 |
+
+### Paso 4: Configurar el Repositorio
+
+1. Clona o haz fork de este repositorio
+2. Asegúrate de tener esta estructura de archivos:
+
+```
+tu-repositorio/
+├── .github/
+│   └── workflows/
+│       └── trading-bot.yml
+├── kraken_trading_bot.py
+├── requirements.txt
+├── .gitignore
+└── README.md
+```
+
+3. Haz push de los cambios a GitHub
+
+## 🚀 Ejecución
+
+### Modo Automático (Recomendado)
+
+El bot se ejecutará automáticamente **cada hora** según la configuración del workflow.
+
+Para modificar la frecuencia, edita la línea `cron` en `.github/workflows/trading-bot.yml`:
+
+```yaml
+schedule:
+  - cron: '0 * * * *'  # Cada hora
+  # - cron: '0 */4 * * *'  # Cada 4 horas
+  # - cron: '0 9,15,21 * * *'  # A las 9:00, 15:00 y 21:00
+```
+
+### Modo Manual
+
+1. Ve a tu repositorio en GitHub
+2. Clic en **Actions**
+3. Selecciona el workflow **Kraken Swing Trading Bot**
+4. Clic en **Run workflow**
+5. Selecciona si quieres ejecutar en modo simulación (`true`) o real (`false`)
+6. Clic en **Run workflow**
+
+### Verificar Ejecución
+
+1. Ve a **Actions** en tu repositorio
+2. Verás el historial de ejecuciones
+3. Clic en cualquier ejecución para ver los logs detallados
+4. También recibirás notificaciones en Telegram
+
+## 📊 Estrategia de Trading
+
+### Lógica de Larry Williams
+
+El bot implementa la metodología de swing structure de Larry Williams:
+
+1. **Detección de Swing Points en 3 niveles:**
+   - Short-term: Giros pequeños (3 barras)
+   - Intermediate: Giros medianos (construidos desde short-term)
+   - Long-term: Giros grandes (construidos desde intermediate)
+
+2. **Señales de Trading:**
+   - **LONG**: Cuando se forma un swing low (compra en soporte)
+   - **SHORT**: Cuando se forma un swing high (vende en resistencia)
+
+3. **Gestión de Posiciones:**
+   - Cierra y revierte cuando cambia la estructura del mercado
+   - Usa leverage para amplificar retornos
+   - Respeta límites de riesgo configurados
+
+### Ejemplo de Operación
+
+```
+1. Bot detecta intermediate swing low @ $0.85
+2. Precio actual: $0.87
+3. Balance: $1000 USD
+4. Configuración: 25% posición, 3x leverage
+
+Cálculo:
+- Capital a usar: $1000 * 0.25 = $250
+- Con leverage 3x: $250 * 3 = $750
+- Cantidad ADA: $750 / $0.87 = 862 ADA
+
+Acción: BUY 862 ADA @ $0.87
+Notificación enviada a Telegram ✅
+```
+
+## 🛡️ Gestión de Riesgo
+
+### Protecciones Implementadas
+
+1. **Drawdown Máximo**: Detiene el bot si la pérdida acumulada excede el límite
+2. **Balance Mínimo**: No opera si el balance es insuficiente
+3. **Tamaño de Posición**: Limita el capital expuesto por operación
+4. **Modo Simulación**: Permite probar sin riesgo real
+
+### Recomendaciones
+
+- Comienza con `POSITION_SIZE_PCT=0.10` (10% del capital)
+- Usa leverage bajo al principio (`LEVERAGE=2`)
+- Monitorea el bot durante las primeras semanas
+- Ajusta parámetros basándote en resultados reales
+- Mantén siempre un balance de seguridad en tu cuenta
+
+## 📱 Notificaciones de Telegram
+
+El bot enviará notificaciones sobre:
+
+- ✅ Operaciones ejecutadas (LONG/SHORT)
+- ⚠️ Advertencias de riesgo
+- ❌ Errores de ejecución
+- ℹ️ Estado del sistema
+
+Formato de notificación de operación:
+
+```
+🟢 NUEVA OPERACIÓN 🟢
+
+Par: XADAZUSD
+Tipo: BUY
+Precio: $0.8750
+Cantidad: 862.00
+Leverage: 3x
+Valor: $754.25
+
+Razón: Nuevo BUY signal detectado en nivel intermediate
+Fecha: 2024-01-15 14:30:00
+```
+
+## 🔍 Monitoreo y Depuración
+
+### Ver Logs en GitHub Actions
+
+1. Actions → Selecciona una ejecución
+2. Clic en el job "trade"
+3. Expande "🚀 Ejecutar bot de trading"
+4. Revisa los logs detallados
+
+### Solución de Problemas Comunes
+
+**Error: "Credenciales de Kraken no configuradas"**
+- Verifica que agregaste `KRAKEN_API_KEY` y `KRAKEN_API_SECRET` en Secrets
+
+**Error: "Insufficient funds"**
+- Tu balance en Kraken es menor a `MIN_BALANCE_USD`
+- Deposita más fondos o reduce `MIN_BALANCE_USD`
+
+**Bot no ejecuta operaciones:**
+- Puede no haber detectado señales de swing points
+- Revisa los logs para ver los swing points detectados
+- Considera usar `SWING_LEVEL=intermediate` si usas `longterm`
+
+**Notificaciones no llegan a Telegram:**
+- Verifica `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`
+- Asegúrate de haber iniciado conversación con el bot
+- Envía `/start` a tu bot en Telegram
+
+## 🧪 Modo de Prueba (DRY_RUN)
+
+Antes de operar con dinero real, prueba el bot en modo simulación:
+
+1. Ejecución manual → Marca `dry_run: true`
+2. O agrega secret: `DRY_RUN=true`
+
+En este modo:
+- ✅ Descarga datos reales de Kraken
+- ✅ Detecta swing points reales
+- ✅ Calcula operaciones reales
+- ❌ NO ejecuta órdenes reales
+- ✅ Envía notificaciones marcadas como "SIMULACIÓN"
+
+## 📈 Personalización Avanzada
+
+### Cambiar Par de Trading
+
+Edita `kraken_trading_bot.py` línea ~50:
+
+```python
+TRADING_PAIR = 'XADAZUSD'  # Cambiar a otro par (ej: 'XXBTZUSD', 'XETHZUSD')
+```
+
+### Modificar Frecuencia de Ejecución
+
+Edita `.github/workflows/trading-bot.yml`:
+
+```yaml
+schedule:
+  - cron: '0 */2 * * *'  # Cada 2 horas
+```
+
+Ejemplos de cron:
+- `'*/30 * * * *'` - Cada 30 minutos
+- `'0 0,8,16 * * *'` - A las 00:00, 08:00 y 16:00
+- `'0 0 * * *'` - Una vez al día a medianoche
+
+### Agregar Stop Loss / Take Profit
+
+El bot actualmente no usa SL/TP fijos, pero puedes modificar el código para agregarlos en la función `execute_trade()`.
+
+## ⚖️ Consideraciones Legales y Éticas
+
+- Este bot es solo para fines educativos y experimentales
+- Tú eres responsable de todas las operaciones ejecutadas
+- Verifica las leyes de trading automatizado en tu jurisdicción
+- Kraken puede suspender cuentas que violen sus términos de servicio
+- El autor no se hace responsable de pérdidas financieras
+
+## 🤝 Soporte y Contribuciones
+
+¿Encontraste un bug? ¿Tienes una mejora? ¡Contribuye!
+
+1. Fork el repositorio
+2. Crea una branch para tu feature
+3. Commit tus cambios
+4. Push a la branch
+5. Abre un Pull Request
+
+## 📚 Recursos Adicionales
+
+- [Documentación API de Kraken](https://docs.kraken.com/rest/)
+- [Libro: Long-Term Secrets to Short-Term Trading](https://www.amazon.com/Long-Term-Secrets-Short-Term-Trading/dp/0471297224)
+- [Documentación de GitHub Actions](https://docs.github.com/en/actions)
+- [Documentación de Telegram Bot API](https://core.telegram.org/bots/api)
+
+## 📄 Licencia
+
+MIT License - Usa bajo tu propio riesgo
+
+---
+
+**Recuerda: El trading conlleva riesgos. Solo opera con capital que puedas permitirte perder.**
